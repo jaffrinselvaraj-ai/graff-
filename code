@@ -1,0 +1,152 @@
+import heapq
+import math
+import time
+
+
+# ============================================================
+# Grid + Graph Definition
+# ============================================================
+
+class GridMap:
+    def __init__(self, grid, weights=None):
+        """
+        grid: 2D list of 0 (free) and 1 (obstacle)
+        weights: optional dict mapping terrain type → movement cost
+        """
+        self.grid = grid
+        self.rows = len(grid)
+        self.cols = len(grid[0])
+        self.weights = weights if weights else {0: 1}
+
+    def in_bounds(self, r, c):
+        return 0 <= r < self.rows and 0 <= c < self.cols
+
+    def passable(self, r, c):
+        return self.grid[r][c] in self.weights
+
+    def neighbors(self, r, c):
+        """4-way movement"""
+        dirs = [(1,0), (-1,0), (0,1), (0,-1)]
+        for dr, dc in dirs:
+            nr, nc = r + dr, c + dc
+            if self.in_bounds(nr, nc) and self.passable(nr, nc):
+                yield nr, nc
+
+    def cost(self, r, c):
+        return self.weights[self.grid[r][c]]
+
+
+# ============================================================
+# Heuristics
+# ============================================================
+
+def manhattan(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def euclidean(a, b):
+    return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+
+
+def inflated_nonadmissible(a, b, inflation=2.5):
+    """Non-admissible on purpose"""
+    return inflation * manhattan(a, b)
+
+
+# ============================================================
+# A* Search Implementation
+# ============================================================
+
+def astar_search(gridmap, start, goal, heuristic):
+    open_set = []
+    heapq.heappush(open_set, (0, start))
+
+    came_from = {}
+    g_score = {start: 0}
+
+    nodes_expanded = 0
+
+    while open_set:
+        _, current = heapq.heappop(open_set)
+        nodes_expanded += 1
+
+        if current == goal:
+            return reconstruct_path(came_from, current), nodes_expanded
+
+        for neighbor in gridmap.neighbors(*current):
+            tentative = g_score[current] + gridmap.cost(*neighbor)
+
+            if neighbor not in g_score or tentative < g_score[neighbor]:
+                g_score[neighbor] = tentative
+                priority = tentative + heuristic(neighbor, goal)
+                heapq.heappush(open_set, (priority, neighbor))
+                came_from[neighbor] = current
+
+    return None, nodes_expanded
+
+
+def reconstruct_path(came_from, current):
+    path = [current]
+    while current in came_from:
+        current = came_from[current]
+        path.append(current)
+    return list(reversed(path))
+
+
+# ============================================================
+# Benchmark Runner
+# ============================================================
+
+def run_benchmark(grid, start, goal):
+    gmap = GridMap(grid)
+
+    heuristics = {
+        "Manhattan": manhattan,
+        "Euclidean": euclidean,
+        "Non-Admissible": lambda a, b: inflated_nonadmissible(a, b, 3.0)
+    }
+
+    results = []
+
+    for name, h in heuristics.items():
+        t0 = time.time()
+        path, expanded = astar_search(gmap, start, goal, h)
+        t1 = time.time()
+
+        results.append({
+            "heuristic": name,
+            "nodes_expanded": expanded,
+            "time": t1 - t0,
+            "path_length": len(path) if path else None
+        })
+
+    return results
+
+
+# ============================================================
+# Example Usage (replace with your maps)
+# ============================================================
+
+if __name__ == "__main__":
+    # Example grid (0 = free, 1 = obstacle)
+    grid = [
+        [0,0,0,0,0],
+        [0,1,1,1,0],
+        [0,0,0,1,0],
+        [0,1,0,0,0],
+        [0,0,0,0,0]
+    ]
+
+    start = (0, 0)
+    goal = (4, 4)
+
+    results = run_benchmark(grid, start, goal)
+
+    print("\n=== PERFORMANCE SUMMARY ===")
+    for r in results:
+        print(
+            f"{r['heuristic']:15} "
+            f"Nodes Expanded: {r['nodes_expanded']:5d} "
+            f"Time: {r['time']:.6f}s "
+            f"Path Length: {r['path_length']}"
+        )
